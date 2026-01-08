@@ -2,6 +2,9 @@ import cv2
 import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
+from mediapipe import solutions
+from mediapipe.framework.formats import landmark_pb2 
+import numpy as np
 
 model_path = "face_landmarker.task"
 
@@ -11,14 +14,59 @@ FaceLandmarkerOptions = mp.tasks.vision.FaceLandmarkerOptions
 FaceLandmarkerResult = mp.tasks.vision.FaceLandmarkerResult
 VisionRunningMode = mp.tasks.vision.RunningMode
 
+# Store the latest detection result (updated by async callback)
+latest_result = None
+
+def draw_landmarks_on_image(rgb_image, detection_result):
+    """Draw face landmarks on the image."""
+    if detection_result is None or not detection_result.face_landmarks:
+        return rgb_image
+    
+    annotated_image = np.copy(rgb_image)
+    
+    for face_landmarks in detection_result.face_landmarks:
+        # Convert to proto format for drawing
+        face_landmarks_proto = landmark_pb2.NormalizedLandmarkList()
+        face_landmarks_proto.landmark.extend([
+            landmark_pb2.NormalizedLandmark(x=landmark.x, y=landmark.y, z=landmark.z)
+            for landmark in face_landmarks
+        ])
+        
+        # Draw face mesh tesselation
+        solutions.drawing_utils.draw_landmarks(
+            image=annotated_image,
+            landmark_list=face_landmarks_proto,
+            connections=solutions.face_mesh.FACEMESH_TESSELATION,
+            landmark_drawing_spec=None,
+            connection_drawing_spec=solutions.drawing_styles.get_default_face_mesh_tesselation_style())
+        
+        # Draw face mesh contours
+        solutions.drawing_utils.draw_landmarks(
+            image=annotated_image,
+            landmark_list=face_landmarks_proto,
+            connections=solutions.face_mesh.FACEMESH_CONTOURS,
+            landmark_drawing_spec=None,
+            connection_drawing_spec=solutions.drawing_styles.get_default_face_mesh_contours_style())
+        
+        # Draw irises
+        solutions.drawing_utils.draw_landmarks(
+            image=annotated_image,
+            landmark_list=face_landmarks_proto,
+            connections=solutions.face_mesh.FACEMESH_IRISES,
+            landmark_drawing_spec=None,
+            connection_drawing_spec=solutions.drawing_styles.get_default_face_mesh_iris_connections_style())
+    
+    return annotated_image
+
 # Callback to handle face landmarker results
-def print_result(result: FaceLandmarkerResult, output_image: mp.Image, timestamp_ms: int):
-    print('face landmarker result: {}'.format(result))
+def on_result(result: FaceLandmarkerResult, output_image: mp.Image, timestamp_ms: int):
+    global latest_result
+    latest_result = result
 
 options = FaceLandmarkerOptions(
     base_options=BaseOptions(model_asset_path=model_path),
     running_mode=VisionRunningMode.LIVE_STREAM,
-    result_callback=print_result)
+    result_callback=on_result)
 
 # Open webcam
 stream = cv2.VideoCapture(0)
@@ -45,10 +93,16 @@ with FaceLandmarker.create_from_options(options) as landmarker:
         # Run async detection
         landmarker.detect_async(mp_image, frame_timestamp_ms)
         
-        # Increment timestamp (using frame count as simple timestamp)
-        frame_timestamp_ms += 33  # ~30fps, roughly 33ms per frame
+        # Increment timestamp
+        frame_timestamp_ms += 33  # ~30fps
         
-        cv2.imshow("webcam", frame)
+        # Draw landmarks on the frame
+        annotated_frame = draw_landmarks_on_image(frame_rgb, latest_result)
+        
+        # Convert back to BGR for OpenCV display
+        display_frame = cv2.cvtColor(annotated_frame, cv2.COLOR_RGB2BGR)
+        
+        cv2.imshow("Face Landmarks", display_frame)
 
         if cv2.waitKey(1) == ord("q"):
             break
