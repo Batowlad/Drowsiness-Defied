@@ -62,10 +62,35 @@ def draw_landmarks_on_image(rgb_image, detection_result):
 def on_result(result: FaceLandmarkerResult, output_image: mp.Image, timestamp_ms: int):
     global latest_result
     latest_result = result
+    
+    if result.face_landmarks:
+        print(f"\n=== Frame {timestamp_ms}ms ===")
+        print(f"Detected {len(result.face_landmarks)} face(s)")
+        
+        # Print landmarks (showing first 5 of 478)
+        for i, face in enumerate(result.face_landmarks):
+            print(f"\nFace {i}: {len(face)} landmarks")
+            for j, lm in enumerate(face[:5]):  # First 5 landmarks
+                print(f"  Landmark {j}: x={lm.x:.4f}, y={lm.y:.4f}, z={lm.z:.4f}")
+            print("  ...")
+        
+        # Print blendshapes (requires output_face_blendshapes=True)
+        if result.face_blendshapes:
+            for i, blendshapes in enumerate(result.face_blendshapes):
+                print(f"\nFace {i} Blendshapes ({len(blendshapes)} categories):")
+                for bs in blendshapes:
+                    print(f"  {bs.category_name}: {bs.score:.4f}")
+        
+        # Print transformation matrices (requires output_facial_transformation_matrixes=True)
+        if result.facial_transformation_matrixes:
+            for i, matrix in enumerate(result.facial_transformation_matrixes):
+                print(f"\nFace {i} Transformation Matrix:")
+                print(matrix)
 
 options = FaceLandmarkerOptions(
     base_options=BaseOptions(model_asset_path=model_path),
     running_mode=VisionRunningMode.LIVE_STREAM,
+    output_face_blendshapes=True,
     result_callback=on_result)
 
 # Open webcam
